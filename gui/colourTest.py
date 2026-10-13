@@ -1,9 +1,11 @@
 import pyautogui
 import time
 
+#Working on windows, do not run within vinv. Later on this code will be transfered to linux
+
 x, y = 500, 500  # pixel to check
 
 while True:
     colour = pyautogui.pixel(x, y)
     print(f"Pixel colour: {colour}")
-    time.sleep(1)   
+    time.sleep(1())

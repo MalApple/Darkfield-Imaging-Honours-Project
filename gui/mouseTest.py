@@ -1,6 +1,8 @@
 from pynput.mouse import Button, Controller
 from screeninfo import get_monitors
 
+#Working on windows, do not run within vinv. Later on this code will be transfered to linux 
+
 mouse = Controller()
 
 screen = get_monitors()[0]
