@@ -1,3 +1,4 @@
+import os, sys
 from tkinter import *
 from tkinter import ttk
 from arduino_controller import ArduinoController
@@ -27,7 +28,12 @@ class WrappingLabel(Label):
 # WINDOW SETUP  ==========================
 root = Tk()
 root.title("Darkfield Imaging Interface")
-root.iconbitmap('images/seal.ico')
+icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images', 'seal.ico')
+try:
+    if sys.platform.startswith('win'):
+        root.iconbitmap(icon_path)
+except TclError:
+    pass
 root.geometry('800x400')
 
 
