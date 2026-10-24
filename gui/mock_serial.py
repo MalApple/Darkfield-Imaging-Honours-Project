@@ -50,5 +50,7 @@ class MockSerial:
             return f"OK: moved down {steps}"
         elif command == "SWITCH":
             return "OK: switched"
+        elif command == "HOME":
+            return "OK: homed"
         else:
             return "ERR: unknown command"

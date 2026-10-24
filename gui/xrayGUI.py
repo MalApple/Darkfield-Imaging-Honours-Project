@@ -19,7 +19,7 @@ def handle_arduino_message(message):
 
 # Wrapping Widget
 class WrappingLabel(Label):
-    #Label that automatically wraps its text to fit the current widget width.
+    """Label that automatically wraps its text to fit the current widget width."""
     def __init__(self, master=None, **kwargs):
         super().__init__(master, **kwargs)
         self.bind('<Configure>', self._on_resize)
@@ -48,8 +48,10 @@ analysis_frame = LabelFrame(root, text='Analysis')
 console_frame = Frame(root)
 
 # Frame configuration
-oper_frame.columnconfigure(0, weight=1, uniform='btns')
-oper_frame.columnconfigure(1, weight=1, uniform='btns')
+oper_frame.columnconfigure(0, weight=0)   # label column takes exactly the width its text needs
+oper_frame.columnconfigure(1, weight=1)
+oper_frame.columnconfigure(2, weight=1)
+oper_frame.columnconfigure(3, weight=1)
 info_frame.columnconfigure(0, weight=1)
 info_frame.columnconfigure(1, weight=1)
 info_frame.columnconfigure(2, weight=1, uniform='load_delete')
@@ -171,12 +173,25 @@ def handle_position_change(new_position):
 presets = load_presets()
 selected_preset = StringVar()
 
+def read_parameters():
+    """Current Pixel size / Propagation / Wavelength as floats. Raises ValueError if a box is empty or invalid."""
+    return {
+        'pixel_size': float(pixel_size_var.get()),
+        'propagation': float(propagation_var.get()),
+        'wavelength': float(wavelength_var.get()),
+    }
+
 def save_preset(entry, presets_dic, dropdown):
     name = entry.get()
     if name:
         if name in presets_dic:
             return
-        presets_dic[name] = arduino.position
+        try:
+            params = read_parameters()
+        except ValueError:
+            print("Preset not saved: pixel size, propagation and wavelength must all be valid numbers")
+            return
+        presets_dic[name] = {'position': arduino.position, **params}
         save_presets(presets_dic)
         dropdown['values'] = list(presets_dic.keys())
         entry.delete(0, END)
@@ -193,7 +208,15 @@ def load_preset(preset_dic, selected_var):
     name = selected_var.get()
     if name not in preset_dic:
         return
-    difference = preset_dic[name] - arduino.position
+    saved = preset_dic[name]
+    if isinstance(saved, dict):
+        target = saved['position']
+        pixel_size_var.set(f"{saved['pixel_size']:g}")
+        propagation_var.set(f"{saved['propagation']:g}")
+        wavelength_var.set(f"{saved['wavelength']:g}")
+    else:
+        target = saved    # older presets only stored the position
+    difference = target - arduino.position
     if difference > 0:
         arduino.move_up(difference)
     elif difference < 0:
@@ -293,8 +316,9 @@ def move_up_clicked():
 
 up_label = Label(
     oper_frame,
-    text='Enter Step Amount:',
-    font=("Helvetica", 10)
+    text='Step amount:',
+    font=("Helvetica", 10),
+    anchor='w'
 )
 up_entry = Entry(
     oper_frame,
@@ -309,7 +333,7 @@ up_button = Button(
 )
 
 up_label.grid(row=2, column=0, sticky='w', padx=(10, 0))
-up_entry.grid(row=2, column=1, sticky='e', padx=(10, 0), pady=(0, 10))
+up_entry.grid(row=2, column=1, sticky='ew', padx=(10, 0), pady=(0, 10))
 up_button.grid(row=2, column=2, columnspan=2, sticky='ew', padx=(10), pady=(0, 10))
 
 
@@ -323,8 +347,9 @@ def move_down_clicked():
 
 down_label = Label(
     oper_frame,
-    text='Enter Step Amount:',
-    font=("Helvetica", 10)
+    text='Step amount:',
+    font=("Helvetica", 10),
+    anchor='w'
 )
 down_entry = Entry(
     oper_frame,
@@ -338,7 +363,7 @@ down_button = Button(
     command=move_down_clicked
 )
 down_label.grid(row=3, column=0, sticky='w', padx=(10, 0))
-down_entry.grid(row=3, column=1, sticky='e', padx=(10, 0))
+down_entry.grid(row=3, column=1, sticky='ew', padx=(10, 0))
 down_button.grid(row=3, column=2, columnspan=2, sticky='ew', padx=(10))
 
 
@@ -373,12 +398,13 @@ def browse_folder(var):
         var.set(path)
 
 def add_path_row(parent, row, label_text, var, command):
+    """Label | read-only path box | Browse button."""
     Label(parent, text=label_text, font=("Helvetica", 10)).grid(row=row, column=0, sticky='w', padx=5, pady=3)
     Entry(parent, textvariable=var, state='readonly').grid(row=row, column=1, sticky='ew', padx=5, pady=3)
     Button(parent, text='Browse...', command=command).grid(row=row, column=2, padx=5, pady=3)
 
 
-# IMAGE INPUTS FRAME
+# IMAGE INPUTS FRAME (left)
 input_frame.columnconfigure(1, weight=1)
 
 reference_var = StringVar()
@@ -401,7 +427,7 @@ method_dropdown.grid(row=2, column=1, sticky='ew', padx=5, pady=3)
 add_path_row(input_frame, 3, 'Darkfield output:', dark_output_var, lambda: browse_folder(dark_output_var))
 
 
-# ANALYSIS FRAME
+# ANALYSIS FRAME (right)
 analysis_frame.columnconfigure(1, weight=1)
 
 analysis_var = StringVar()
@@ -417,6 +443,25 @@ analysis_dropdown = ttk.Combobox(
 analysis_dropdown.grid(row=0, column=1, sticky='ew', padx=5, pady=3)
 
 add_path_row(analysis_frame, 1, 'Analysis output:', analysis_output_var, lambda: browse_folder(analysis_output_var))
+
+# Experimental parameters (numbers only; scientific notation such as 4.9594e-5 is allowed)
+def validate_number(new_value):
+    return all(ch in '0123456789.eE+-' for ch in new_value)
+
+vcmd_number = (root.register(validate_number), '%P')
+
+pixel_size_var = StringVar(value='194')
+propagation_var = StringVar(value='1.55e6')
+wavelength_var = StringVar(value='4.9594e-5')
+
+def add_number_row(parent, row, label_text, var):
+    Label(parent, text=label_text, font=("Helvetica", 10)).grid(row=row, column=0, sticky='w', padx=5, pady=3)
+    Entry(parent, textvariable=var, validate='key', validatecommand=vcmd_number).grid(
+        row=row, column=1, columnspan=2, sticky='ew', padx=5, pady=3)
+
+add_number_row(analysis_frame, 2, 'Pixel size (µm):', pixel_size_var)
+add_number_row(analysis_frame, 3, 'Propagation (µm):', propagation_var)
+add_number_row(analysis_frame, 4, 'Wavelength (µm):', wavelength_var)
 
 
 arduino = ArduinoController(
