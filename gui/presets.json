@@ -1,1 +1,14 @@
-{}
+{
+    "test1": {
+        "position": 0,
+        "pixel_size": 194.0,
+        "propagation": 1550000.0,
+        "wavelength": 4.9594e-05
+    },
+    "test2": {
+        "position": 10,
+        "pixel_size": 194.0,
+        "propagation": 1550000.0,
+        "wavelength": 4.9594e-05
+    }
+}
