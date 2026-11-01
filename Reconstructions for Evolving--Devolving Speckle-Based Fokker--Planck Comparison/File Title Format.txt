@@ -1,2 +1,0 @@
-File Title Format:
-SAMPLE_EvolutionModel_Exposures_Signal.tif

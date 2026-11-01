@@ -10,8 +10,8 @@ import tifffile as tiff
 from EvolveDevolve_OptimalReg_Opt import Single_Evolving, Single_Devolving, compute_regularisation_parameter, TIE_Speckle
 
 # ----------------------------- CONFIG -----------------------------
-REFERENCE_IMAGE = "Darkfield-Imaging-Honours-Project/reference_images/no_mouse_200_mesh_count.btf"
-SAMPLE_IMAGE = "Darkfield-Imaging-Honours-Project/sample_images/mouse_200_mesh_count.btf"
+REFERENCE_IMAGE = "Darkfield-Imaging-Honours-Project/reference_images/no_cream_sandpaper.btf"
+SAMPLE_IMAGE = "Darkfield-Imaging-Honours-Project/sample_images/cream_sandpaper.btf"
 SAVE_DIR = "Darkfield-Imaging-Honours-Project/single_pair_output"
 
 PIXEL_SIZE = 194             # Pixel size of the detector [microns]
