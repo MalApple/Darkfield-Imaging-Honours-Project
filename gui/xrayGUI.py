@@ -6,10 +6,20 @@ from arduino_controller import ArduinoController
 
 from saved_presets import load_presets, save_presets
 
+import numpy as np
+import os
 import sys
+import threading
+import traceback
+
+# run_single_pair.py sits one folder up, next to EvolveDevolve_OptimalReg_Opt.py
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+import run_single_pair
 
 
 # ARDUINO SETUP
+arduino = None
+
 def handle_arduino_message(message):
     print("Arduino:", message)
     if message.startswith("OK: homed"):
@@ -33,7 +43,7 @@ class WrappingLabel(Label):
 root = Tk()
 root.title("Darkfield Imaging Interface")
 #root.iconbitmap('images/seal.ico')
-root.geometry('800x700')
+root.geometry('860x860')
 
 
 # FRAMES
@@ -45,6 +55,8 @@ info_frame = LabelFrame(root)
 oper_frame = LabelFrame(root)
 input_frame = LabelFrame(root, text='Image Inputs')
 analysis_frame = LabelFrame(root, text='Analysis')
+region_frame = LabelFrame(root, text='Regions (pixels)')
+scan_frame = LabelFrame(root, text='Gamma Scan')
 console_frame = Frame(root)
 
 # Frame configuration
@@ -57,25 +69,62 @@ info_frame.columnconfigure(1, weight=1)
 info_frame.columnconfigure(2, weight=1, uniform='load_delete')
 info_frame.columnconfigure(3, weight=1, uniform='load_delete')
 
-root.rowconfigure(3, weight=1)
+root.rowconfigure(4, weight=1)
 
 home_frame.grid(row=0, column=0, columnspan=2, sticky='ew')
 info_frame.grid(row=1, column=0, sticky='nsew', padx=10, pady=5)
 oper_frame.grid(row=1, column=1, sticky='nsew', padx=10, pady=5)
 input_frame.grid(row=2, column=0, sticky='nsew', padx=10, pady=5)
 analysis_frame.grid(row=2, column=1, sticky='nsew', padx=10, pady=5)
-console_frame.grid(row=3, column=0, columnspan=2, sticky='nsew', padx=10, pady=(0, 10))
+region_frame.grid(row=3, column=0, sticky='nsew', padx=10, pady=5)
+scan_frame.grid(row=3, column=1, sticky='nsew', padx=10, pady=5)
+console_frame.grid(row=4, column=0, columnspan=2, sticky='nsew', padx=10, pady=(0, 10))
 
 
 # HOME FRAME
 home_status_label = Label(
     home_frame,
-    text='Not homed — click Home before using any other control',
+    text='Not connected',
     font=("Helvetica", 11, 'bold'),
     fg='red'
 )
 
+simulate_var = BooleanVar(value=False)
+port_var = StringVar(value='COM8')
+
+def connect_clicked():
+    global arduino
+    if arduino is None:
+        try:
+            arduino = ArduinoController(
+                port=port_var.get(),
+                baudrate=9600,
+                on_message=handle_arduino_message,
+                on_position_change=handle_position_change,
+                simulate=simulate_var.get()
+            )
+            arduino.connect()
+        except Exception as e:
+            print("Could not connect:", e)
+            arduino = None
+            return
+        pos_value.config(text=str(arduino.position))
+        connect_button.config(text='Disconnect')
+        home_status_label.config(text='Connected — click Home', fg='red')
+    else:
+        for name in ('disconnect', 'close'):
+            if hasattr(arduino, name):
+                getattr(arduino, name)()
+                break
+        arduino = None
+        set_controls_enabled(False)
+        connect_button.config(text='Connect')
+        home_status_label.config(text='Not connected', fg='red')
+
 def home_clicked():
+    if arduino is None:
+        print("Connect first")
+        return
     set_controls_enabled(False)
     home_button.config(state=DISABLED)
     home_status_label.config(text='Homing...', fg='orange')
@@ -86,6 +135,23 @@ def on_homing_complete():
     home_button.config(state=NORMAL)
     set_controls_enabled(True)
 
+simulate_check = Checkbutton(
+    home_frame,
+    text='Simulation mode',
+    variable=simulate_var,
+    font=("Helvetica", 10)
+)
+
+port_label = Label(home_frame, text='Port:', font=("Helvetica", 10))
+port_entry = Entry(home_frame, textvariable=port_var, width=7)
+
+connect_button = Button(
+    home_frame,
+    text='Connect',
+    command=connect_clicked,
+    font=("Helvetica", 11, 'bold')
+)
+
 home_button = Button(
     home_frame,
     text='Home',
@@ -94,7 +160,11 @@ home_button = Button(
 )
 
 home_status_label.grid(row=0, column=0, sticky='w', padx=10, pady=10)
-home_button.grid(row=0, column=1, sticky='e', padx=10, pady=10)
+simulate_check.grid(row=0, column=1, padx=5)
+port_label.grid(row=0, column=2)
+port_entry.grid(row=0, column=3, padx=(0, 10))
+connect_button.grid(row=0, column=4, padx=5)
+home_button.grid(row=0, column=5, sticky='e', padx=10)
 home_frame.columnconfigure(0, weight=1)
 
 
@@ -107,14 +177,15 @@ console_text.pack(fill=BOTH, expand=True)
 class ConsoleRedirector:
     """Mirrors writes to the real stdout AND appends them into console_text.
     write() can be called from a background thread (e.g. the Arduino's
-    serial reader thread), so the actual widget update is marshalled onto
-    the main thread via root.after."""
+    serial reader thread, or the analysis), so the actual widget update is
+    marshalled onto the main thread via root.after."""
     def __init__(self, text_widget, original_stream):
         self.text_widget = text_widget
         self.original_stream = original_stream
 
     def write(self, message):
-        self.original_stream.write(message)
+        if self.original_stream is not None:   # None when run as a windowed .exe
+            self.original_stream.write(message)
         if message.strip():
             root.after(0, self._append, message)
 
@@ -125,7 +196,8 @@ class ConsoleRedirector:
         self.text_widget.config(state=DISABLED)
 
     def flush(self):
-        self.original_stream.flush()
+        if self.original_stream is not None:
+            self.original_stream.flush()
 
 sys.stdout = ConsoleRedirector(console_text, sys.stdout)
 
@@ -169,7 +241,7 @@ pos_value.grid(row=3, column=1, sticky='w', padx=(10, 0))
 def handle_position_change(new_position):
     root.after(0, lambda: pos_value.config(text=str(new_position)))
 
-# INFO FRAME Presets 
+# INFO FRAME Presets
 presets = load_presets()
 selected_preset = StringVar()
 
@@ -339,7 +411,7 @@ up_button.grid(row=2, column=2, columnspan=2, sticky='ew', padx=(10), pady=(0, 1
 
 
 
-#Move Down Controls 
+#Move Down Controls
 def move_down_clicked():
     value = down_entry.get()
     if value:
@@ -404,6 +476,73 @@ def add_path_row(parent, row, label_text, var, command):
     Button(parent, text='Browse...', command=command).grid(row=row, column=2, padx=5, pady=3)
 
 
+# BACKGROUND RUNS (the analysis runs on its own thread so the window stays responsive)
+def run_in_background(job, **kwargs):
+    run_button.config(state=DISABLED)
+    scan_button.config(state=DISABLED)
+
+    def target():
+        try:
+            job(**kwargs)
+        except ValueError as e:
+            print("Error:", e)
+        except Exception:
+            print(traceback.format_exc())
+        root.after(0, jobs_finished)
+
+    threading.Thread(target=target, daemon=True).start()
+
+def jobs_finished():
+    run_button.config(state=NORMAL)
+    scan_button.config(state=NORMAL)
+
+def read_inputs():
+    """Everything the analysis needs, read from the boxes. Returns None (after saying why) if something is missing."""
+    if not (reference_var.get() and sample_var.get() and dark_output_var.get()):
+        print("Choose the reference image, sample image and darkfield output folder first")
+        return None
+    try:
+        return {
+            'reference_image': reference_var.get(),
+            'sample_image': sample_var.get(),
+            'save_dir': dark_output_var.get(),
+            'pixel_size': float(pixel_size_var.get()),
+            'gamma': float(gamma_var.get()),
+            'prop': float(propagation_var.get()),
+            'wavelength': float(wavelength_var.get()),
+            'signal_region': tuple(int(v.get()) for v in signal_vars),
+            'air_region': tuple(int(v.get()) for v in air_vars),
+        }
+    except ValueError:
+        print("Pixel size, propagation, wavelength, gamma and the region boxes must all be filled in with numbers")
+        return None
+
+def run_clicked():
+    if method_var.get() != 'Fokker-Planck':
+        print(method_var.get() + " has not been added yet")
+        return
+    inputs = read_inputs()
+    if inputs:
+        run_in_background(run_single_pair.run, **inputs)
+
+def scan_clicked():
+    inputs = read_inputs()
+    if not inputs:
+        return
+    try:
+        low = float(scan_from_var.get())
+        high = float(scan_to_var.get())
+        steps = int(float(scan_steps_var.get()))
+    except ValueError:
+        print("Gamma scan From, To and Steps must be numbers")
+        return
+    if low <= 0 or high <= 0 or steps < 1:
+        print("Gamma scan From and To must be above zero, with at least 1 step")
+        return
+    del inputs['gamma'], inputs['signal_region']
+    run_in_background(run_single_pair.gamma_scan, gamma_values=np.geomspace(low, high, steps), **inputs)
+
+
 # IMAGE INPUTS FRAME (left)
 input_frame.columnconfigure(1, weight=1)
 
@@ -425,6 +564,9 @@ method_dropdown = ttk.Combobox(
 method_dropdown.grid(row=2, column=1, sticky='ew', padx=5, pady=3)
 
 add_path_row(input_frame, 3, 'Darkfield output:', dark_output_var, lambda: browse_folder(dark_output_var))
+
+run_button = Button(input_frame, text='Run Darkfield', command=run_clicked)
+run_button.grid(row=4, column=0, columnspan=3, sticky='ew', padx=5, pady=5)
 
 
 # ANALYSIS FRAME (right)
@@ -453,6 +595,7 @@ vcmd_number = (root.register(validate_number), '%P')
 pixel_size_var = StringVar(value='194')
 propagation_var = StringVar(value='1.55e6')
 wavelength_var = StringVar(value='4.9594e-5')
+gamma_var = StringVar(value='720')
 
 def add_number_row(parent, row, label_text, var):
     Label(parent, text=label_text, font=("Helvetica", 10)).grid(row=row, column=0, sticky='w', padx=5, pady=3)
@@ -462,19 +605,42 @@ def add_number_row(parent, row, label_text, var):
 add_number_row(analysis_frame, 2, 'Pixel size (µm):', pixel_size_var)
 add_number_row(analysis_frame, 3, 'Propagation (µm):', propagation_var)
 add_number_row(analysis_frame, 4, 'Wavelength (µm):', wavelength_var)
+add_number_row(analysis_frame, 5, 'Gamma (δ/β):', gamma_var)
 
 
-arduino = ArduinoController(
-    port='COM8',
-    baudrate=9600,
-    on_message=handle_arduino_message,
-    on_position_change=handle_position_change,
-    simulate=True
-)
-arduino.connect()
-pos_value.config(text=str(arduino.position))
+# REGION FRAME (left) - the air patch (no specimen) and the signal patch (inside the specimen)
+air_vars = [StringVar(value=str(v)) for v in (400, 600, 0, 80)]
+signal_vars = [StringVar(value=str(v)) for v in (600, 650, 600, 650)]
 
-# disable every control except Home until the motor has homed
+for column, heading in enumerate(['row from', 'row to', 'col from', 'col to']):
+    Label(region_frame, text=heading, font=("Helvetica", 9)).grid(row=0, column=column + 1)
+
+def add_region_row(parent, row, label_text, variables):
+    Label(parent, text=label_text, font=("Helvetica", 10)).grid(row=row, column=0, sticky='w', padx=5, pady=3)
+    for column, var in enumerate(variables):
+        Entry(parent, textvariable=var, width=7, validate='key', validatecommand=vcmd).grid(
+            row=row, column=column + 1, padx=2, pady=3)
+
+add_region_row(region_frame, 1, 'Air (no specimen):', air_vars)
+add_region_row(region_frame, 2, 'Signal (in specimen):', signal_vars)
+
+
+# GAMMA SCAN FRAME (right)
+scan_frame.columnconfigure(1, weight=1)
+
+scan_from_var = StringVar(value='100')
+scan_to_var = StringVar(value='10000')
+scan_steps_var = StringVar(value='8')
+
+add_number_row(scan_frame, 0, 'From:', scan_from_var)
+add_number_row(scan_frame, 1, 'To:', scan_to_var)
+add_number_row(scan_frame, 2, 'Steps:', scan_steps_var)
+
+scan_button = Button(scan_frame, text='Run Gamma Scan', command=scan_clicked)
+scan_button.grid(row=3, column=0, columnspan=3, sticky='ew', padx=5, pady=5)
+
+
+# disable every screen control until the motor has homed
 gated_widgets = [
     up_entry, up_button,
     down_entry, down_button,

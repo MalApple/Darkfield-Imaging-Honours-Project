@@ -1,3 +1,4 @@
 *.btf
 gui/presets.json
 gui/presets.json
+single_pair_output/
