@@ -19,12 +19,14 @@ python3 -m PyInstaller --version >/dev/null 2>&1 || pip install pyinstaller
 
 rm -rf build dist DarkfieldGUI.spec
 
-python3 -m PyInstaller --noconfirm --onedir --name DarkfieldGUI \
+python3 -m PyInstaller --noconfirm --clean --onedir --name DarkfieldGUI \
     --paths . --paths gui \
     --hidden-import matplotlib.backends.backend_tkagg \
     --hidden-import mock_serial \
+    --collect-all fabio \
+    --collect-submodules fabio \
     gui/xrayGUI.py
-
+    
 # a double-clickable launcher entry; edit Exec to the folder you put the app in
 cat > dist/DarkfieldGUI/DarkfieldGUI.desktop <<'EOF'
 [Desktop Entry]
