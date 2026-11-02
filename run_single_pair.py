@@ -1,5 +1,5 @@
 # Simple single-exposure darkfield: ONE reference image + ONE sample image.
-# The GUI (gui/xrayGUI.py) calls run() and gamma_scan();
+# The GUI (gui/xrayGUI.py) calls run() and gamma_scan(); nothing here reads a CONFIG block.
 
 import os
 
@@ -61,6 +61,22 @@ def _check_region(region, shape, name):
     return r0, r1, c0, c1
 
 
+def load_ratio(reference_image, sample_image):
+    """Sample / reference on the cropped image, for choosing the air and signal regions by eye.
+    The coordinates on this image are exactly the ones run() expects. Scaled so its median is 1."""
+    ref = _load(reference_image)
+    sam = _load(sample_image)
+    if ref.shape != sam.shape:
+        raise ValueError(f"Reference and sample images have different shapes: {ref.shape} vs {sam.shape}")
+    c = CROP_EDGE
+    if c > 0:
+        ref = ref[c:-c, c:-c]
+        sam = sam[c:-c, c:-c]
+    floor = FLOOR_FRACTION * float(np.median(ref))
+    ratio = np.maximum(sam, floor) / np.maximum(ref, floor)
+    return ratio / float(np.median(ratio))
+
+
 def _limits(img, low=1, high=99):
     m = DISPLAY_MARGIN
     if min(img.shape) > 4 * m:
@@ -75,7 +91,7 @@ def _limits(img, low=1, high=99):
 
 
 def _save_panels(panels, title, prefix, save_dir):
-    """Save each panel as a PNG plus one overview figure."""
+    """Save one overview PNG containing all the panels."""
     n = len(panels)
     fig, axes = plt.subplots(1, n, figsize=(5 * n, 5), squeeze=False)
     for ax, (label, img) in zip(axes[0], panels):
@@ -85,9 +101,6 @@ def _save_panels(panels, title, prefix, save_dir):
         ax.set_xticks([])
         ax.set_yticks([])
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        name = label.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_") \
-                    .replace(",", "").replace(":", "")
-        plt.imsave(os.path.join(save_dir, f"{prefix}_{name}.png"), img, cmap=COLORMAP, vmin=lo, vmax=hi)
     fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(os.path.join(save_dir, f"{prefix}_overview.png"), dpi=150)

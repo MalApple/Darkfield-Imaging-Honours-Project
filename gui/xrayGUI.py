@@ -12,10 +12,9 @@ import sys
 import threading
 import traceback
 
-# run_single_pair.py sits one folder up, next to EvolveDevolve_OptimalReg_Opt.py
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 import run_single_pair
-
+from region_viewer import open_region_viewer
 
 # ARDUINO SETUP
 arduino = None
@@ -90,7 +89,7 @@ home_status_label = Label(
 )
 
 simulate_var = BooleanVar(value=False)
-port_var = StringVar(value='COM8')
+port_var = StringVar(value='COM8' if sys.platform.startswith('win') else '/dev/ttyACM0')
 
 def connect_clicked():
     global arduino
@@ -623,6 +622,24 @@ def add_region_row(parent, row, label_text, variables):
 
 add_region_row(region_frame, 1, 'Air (no specimen):', air_vars)
 add_region_row(region_frame, 2, 'Signal (in specimen):', signal_vars)
+
+def view_regions_clicked():
+    if not (reference_var.get() and sample_var.get()):
+        print("Choose the reference and sample images first")
+        return
+    try:
+        ratio = run_single_pair.load_ratio(reference_var.get(), sample_var.get())
+    except AttributeError:
+        print("The run_single_pair.py being used is out of date (it has no load_ratio): "
+              + str(run_single_pair.__file__))
+        return
+    except Exception as e:
+        print("Could not load images:", e)
+        return
+    open_region_viewer(root, ratio, air_vars, signal_vars)
+
+view_button = Button(region_frame, text='Show regions on image', command=view_regions_clicked)
+view_button.grid(row=3, column=0, columnspan=5, sticky='ew', padx=5, pady=5)
 
 
 # GAMMA SCAN FRAME (right)
