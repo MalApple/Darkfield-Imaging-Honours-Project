@@ -1,0 +1,206 @@
+import numpy as np
+from matplotlib import pyplot as plt
+import tifffile
+import os
+import pandas as pd
+
+
+
+# Fetch directory with data files
+directory_file_path = input("Please input the absolute file path of the directory in which your data files are located: ")
+# Function to search for specific files in a directory. Returns a list of filenames that contain any of the strings in the input list
+def get_file_names_with_strings(str_list):
+    full_list = os.listdir(directory_file_path) # Directory where DF and OG TIFF files are stored
+    final_list = [] # Initialise to concatonate
+    for file in full_list:
+        filename = os.fsdecode(file)
+        for string in str_list:
+            if string in filename:
+                final_list = final_list + [filename]
+            elif string not in filename:
+                exit("There is no image pair with that string in this directory. Please check your inputs or your files.")
+
+    return final_list
+
+# Test function
+# print(get_file_names_with_strings(['_43'])) # Returns list with DF image in index 0, then OG image in index 1
+# print(get_file_names_with_strings(['mesh']))
+
+# The directory you list below must be the same as the directory in which your tifffile library is imported, or tifffile.imread() will not work.
+# The system I have used is to have subfolders of various datasets, but to move all the tiff files of the data I want to analyse at one time into the main directory.
+# Example: My main directory (the path of which is input below) is 'C:\PycharmProjects\dark-field-extraction'. I have multiple subfolders with data taken from different days in this main directory.
+#           For this example let's say one of my subfolders of data is C:\PycharmProjects\dark-field-extraction\mouse data 2_5_26'. I move the tiff files of the DF and original transmission images from my subfolder mouse data 2_5_26 into just dark-field-extraction so the tifffile.imread() will be able to locate them.
+#           After this script is done running and I have the results I need, I move the data files back into the mouse data 2_5_26 subfolder to keep all my data neat.
+directory = os.fsencode(directory_file_path)
+
+# Ask for how many image pairs are in the data set
+no_image_pairs = input("How many image pairs would you like to analyse? Please enter as numeric value (e.g. 2): ")
+pair_counter = 1
+diffusers_of_image_pairs = []
+for image_no in range(int(no_image_pairs)):
+    if pair_counter == 1: # Case in which multiple image pairs being processed, and this is the first of them
+        file_name = input("Please input a string contained in the name of your first image pair: ")
+    elif no_image_pairs == 1: # Case in which only one image pair is being processed
+        file_name = input("Please input a string contained in the name of your image pair: ")
+    else: # For the rest of the image pairs, if multiple
+        file_name = input("Please input a string contained in the name of your next image pair: ")
+    pair_counter = pair_counter + 1
+    diffusers_of_image_pairs.append(file_name)
+
+# diffusers_of_image_pairs = ['_43'] # Make these inputs! Maybe ask user how many image pairs they want to analyse first, so it knows how many names to expect
+# Initialise empty arrays
+snr_results_df = []
+snr_results_og = []
+cnr_results_df = []
+cnr_results_og = []
+
+for image_pair in diffusers_of_image_pairs:
+    # Make list of image pairs by searching for two files with the same diffuser type in their names
+    files_to_test = get_file_names_with_strings([image_pair])
+
+    if len(files_to_test) != 2:
+        if len(files_to_test) > 2:
+            print('There is more than one image pair with the sting "{}" in the file name! Please refine your search.'.format(image_pair))
+        elif len(files_to_test) == 1:
+            print('There is only one file in this directory with the string "{}" in the file name. Check your files or your search input.'.format(image_pair))
+        elif len(files_to_test) == 0:
+            print('There are no files in this directory with the string "{}" in the file name. Check your files or your search input.'.format(image_pair))
+        break
+
+    # Read and plot the DF and OG images
+    df_image = tifffile.imread(files_to_test[0])
+    plt.subplot(1, 2, 1)  # Show DF image and original image together
+    plt.imshow(df_image, vmin=0, vmax=0.2e-10)
+    plt.title('Dark Field')
+
+    # Get/save original x-ray transmission for comparison (like for signal-noise ratio)
+    og_x_ray = tifffile.imread(files_to_test[1])
+    plt.subplot(1, 2, 2)  # Show DF image and original image together
+    plt.imshow(og_x_ray)
+    plt.title('Original Transmission')
+
+    # Show DF and OG image side by side
+    plt.show()
+
+    # Subplot several specific sections of the dark field image
+    # For air to the right of the sample
+    air_df = df_image[960:1010, 650:700] # Make these inputs!
+    # plt.subplot(1, 3, 1)
+    # plt.imshow(air_df)
+    # plt.title('Air')
+    # For lung
+    lung_df = df_image[560:610, 400:450]
+    # plt.subplot(1, 3, 2)
+    # plt.imshow(lung_df)
+    # plt.title('Lung')
+    # For plastic
+    plastic_df = df_image[860:910, 500:550]
+    # plt.subplot(1, 3, 3)
+    # plt.imshow(plastic_df)
+    # plt.title('Plastic')
+
+    # Subplot several specific sections of the original x-ray image
+    # For air to the right of the sample
+    air_og = og_x_ray[960:1010, 650:700]
+    plt.subplot(1, 3, 1)
+    plt.imshow(air_df)
+    plt.title('Air')
+    # For lung
+    lung_og = og_x_ray[560:610, 400:450]
+    plt.subplot(1, 3, 2)
+    plt.imshow(lung_df)
+    plt.title('Lung')
+    # For plastic
+    plastic_og = og_x_ray[860:910, 500:550]
+    plt.subplot(1, 3, 3)
+    plt.imshow(plastic_df)
+    plt.title('Plastic')
+
+    # Calculate Signal-to-Noise Ratio of regions of DF image: SNR = mean of signal / std of signal
+    snr_air_df = np.mean(air_df) / np.std(air_df)
+    snr_lung_df = np.mean(lung_df) / np.std(lung_df)
+    snr_plastic_df = np.mean(plastic_df) / np.std(plastic_df)
+    # print("The SNR of the air in the dark field image with {} diffuser is {}".format(image_pair, snr_air_df))
+    # print("The SNR of the lung in the dark field image with {} diffuser is {}".format(image_pair, snr_lung_df))
+    # print("The SNR of the plastic in the dark field image with {} diffuser is {}".format(image_pair, snr_plastic_df))
+
+    # Calculate Signal-to-Noise Ratio of DF image vs Original x-ray
+    snr_air_og = np.mean(air_og) / np.std(air_og)
+    snr_lung_og = np.mean(lung_og) / np.std(lung_og)
+    snr_plastic_og = np.mean(plastic_og) / np.std(plastic_og)
+
+    plt.show()
+
+    # Save SNR data for this diffuser
+    snr_results_df.append([snr_air_df, snr_lung_df, snr_plastic_df])
+    snr_results_og.append([snr_air_og, snr_lung_og, snr_plastic_og])
+
+    # Calculate Contrast-to-Noise Ratio: CNR = (mean of signal - mean of background)/std
+    # Here: mean of signal = mean of lung area, mean of background = mean of air
+    cnr_lung_air_df = abs((np.mean(lung_df) - np.mean(air_df)) / np.std(lung_df)) # Comparing air to lungs
+    cnr_lung_plastic_df = abs((np.mean(lung_df) - np.mean(plastic_df)) / np.std(lung_df)) # Now comparing lung to plastic
+    # print("The CNR of the lung compared to air in the dark field image with {} diffuser is {}".format(image_pair, cnr_lung_air_df))
+    # print("The CNR of the lung compared to plastic in the dark field image with {} diffuser is {}".format(image_pair, cnr_lung_plastic_df))
+
+    # Calculate Contrast-to-Noise Ratio of Original x-ray
+    cnr_lung_air_og = abs((np.mean(lung_og) - np.mean(air_og)) / np.std(lung_og))  # Comparing air to lungs
+    cnr_lung_plastic_og = abs((np.mean(lung_og) - np.mean(plastic_og)) / np.std(lung_og))  # Now comparing lung to plastic
+
+    # Make a list of lists of CNR data for dataframe formatting
+    cnr_results_df.append([cnr_lung_air_df, cnr_lung_plastic_df])
+    cnr_results_og.append([cnr_lung_air_og, cnr_lung_plastic_og])
+
+
+# SNR Results dataframes for DF and OG:
+materials = ['Air', 'Lung', 'Plastic'] # For dataframe label
+snr_df_dataframe = pd.DataFrame(snr_results_df, [diffusers_of_image_pairs], [materials])
+snr_df_dataframe_labelled = pd.concat([pd.concat([snr_df_dataframe], keys=['Materials'], axis=1)], keys=['Diffuser'])
+snr_df_dataframe_labelled = pd.concat([snr_df_dataframe_labelled], keys=['SNR of Dark Field Image'], axis=1)
+print(snr_df_dataframe_labelled)
+
+snr_og_dataframe = pd.DataFrame(snr_results_og, [diffusers_of_image_pairs], [materials])
+snr_og_dataframe_labelled = pd.concat([pd.concat([snr_og_dataframe], keys=['Materials'], axis=1)], keys=['Diffuser'])
+snr_og_dataframe_labelled = pd.concat([snr_og_dataframe_labelled], keys=['SNR of Original X-Ray'], axis=1)
+print(snr_og_dataframe_labelled)
+
+# CNR Results dataframe for DF and OG:
+material_comp = ['Lung-Air', 'Lung-Plastic']
+cnr_df_dataframe = pd.DataFrame(cnr_results_df, [diffusers_of_image_pairs], [material_comp])
+cnr_df_dataframe_labelled = pd.concat([pd.concat([cnr_df_dataframe], keys=['Materials Compared'], axis=1)], keys=['Diffuser'])
+cnr_df_dataframe_labelled = pd.concat([cnr_df_dataframe_labelled], keys=['CNR of Dark Field Image'], axis=1)
+print(cnr_df_dataframe_labelled)
+
+cnr_og_dataframe = pd.DataFrame(cnr_results_og, [diffusers_of_image_pairs], [material_comp])
+cnr_og_dataframe_labelled = pd.concat([pd.concat([cnr_og_dataframe], keys=['Materials Compared'], axis=1)], keys=['Diffuser'])
+cnr_og_dataframe_labelled = pd.concat([cnr_og_dataframe_labelled], keys=['CNR of Original X-Ray'], axis=1)
+print(cnr_og_dataframe_labelled)
+
+# Want high SNR (indicates clear image w/ less noise) and high CNR
+
+# Plot SNR results: Graph for DF image
+snr_df_graph = snr_df_dataframe.plot.bar()
+snr_df_graph.set_title('SNR of the Dark Field Image')
+snr_df_graph.set_xlabel('Diffusers')
+snr_df_graph.set_ylabel('Signal to Noise Ratio')
+
+# Plot SNR results: Graph for OG image
+snr_og_graph = snr_og_dataframe.plot.bar()
+snr_og_graph.set_title('SNR of the Original X-Ray Image')
+snr_og_graph.set_xlabel('Diffusers')
+snr_og_graph.set_ylabel('Signal to Noise Ratio')
+
+plt.show()
+
+# Plot CNR results: Graph for OG image
+cnr_df_graph = cnr_df_dataframe.plot.bar()
+cnr_df_graph.set_title('CNR of the Dark Field Image')
+cnr_df_graph.set_xlabel('Diffusers')
+cnr_df_graph.set_ylabel('Contrast to Noise Ratio')
+
+# Plot CNR results: Graph for OG image
+cnr_og_graph = cnr_og_dataframe.plot.bar()
+cnr_og_graph.set_title('CNR of the Original X-Ray Image')
+cnr_og_graph.set_xlabel('Diffusers')
+cnr_og_graph.set_ylabel('Contrast to Noise Ratio')
+
+plt.show()
