@@ -496,7 +496,6 @@ def jobs_finished():
     scan_button.config(state=NORMAL)
 
 def read_inputs():
-    """Everything the analysis needs, read from the boxes. Returns None (after saying why) if something is missing."""
     if not (reference_var.get() and sample_var.get() and dark_output_var.get()):
         print("Choose the reference image, sample image and darkfield output folder first")
         return None
@@ -585,7 +584,7 @@ analysis_dropdown.grid(row=0, column=1, sticky='ew', padx=5, pady=3)
 
 add_path_row(analysis_frame, 1, 'Analysis output:', analysis_output_var, lambda: browse_folder(analysis_output_var))
 
-# Experimental parameters (numbers only; scientific notation such as 4.9594e-5 is allowed)
+# Experimental parameters (numbers only; scientific notation such as 4.9594e-5 is okay)
 def validate_number(new_value):
     return all(ch in '0123456789.eE+-' for ch in new_value)
 
